@@ -82,6 +82,19 @@ async def process_example(example, client, semaphore, out_file):
         except Exception as e:
             print(f"Error processing problem_id={example.get('problem_id')}: {e}")
 
+def load_cached_ids(out_file):
+    if not os.path.exists(out_file):
+        return set()
+    cached_ids = set()
+    with open(out_file, "r", encoding="utf-8") as f:
+        for line in f:
+            try:
+                item = json.loads(line)
+                cached_ids.add(item.get("problem_id"))
+            except json.JSONDecodeError:
+                continue
+    return cached_ids
+
 async def main(args):
     os.makedirs(os.path.dirname(args.out_file), exist_ok=True)
     # Proper client setup
@@ -94,7 +107,13 @@ async def main(args):
     with open(args.input_file, mode="r", encoding="utf-8") as f:
         data = json.load(f)
 
-    sampled_data = random.sample(data, args.sample_size)
+    cached_ids = load_cached_ids(args.out_file)
+
+    filtered_data = [ex for ex in data if ex["problem_id"] not in cached_ids]
+    if args.sample_size < len(filtered_data):
+        sampled_data = random.sample(filtered_data, args.sample_size)
+    else:
+        sampled_data = filtered_data
     sem = asyncio.Semaphore(args.concurrency)
 
     await tqdm.gather(
